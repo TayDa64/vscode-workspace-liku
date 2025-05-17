@@ -1,0 +1,87 @@
+{
+  "name": "vscode-workspace-liku",
+  "displayName": "Workspace Liku Setup",
+  "description": "Easily set up new VS Code workspaces with predefined configurations.",
+  "version": "0.0.1",
+  "publisher": "TayDa64",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TayDa64/vscode-workspace-liku.git"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:workspace-liku.activityView",
+    "onCommand:workspace-liku.setupWorkspace"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "workspace-liku.setupWorkspace",
+        "title": "New Liku Workspace Setup",
+        "category": "WorkspaceLiku"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "workspace-liku-view-container",
+          "title": "Liku Setup",
+          "icon": "$(tools)"
+        }
+      ]
+    },
+    "views": {
+      "workspace-liku-view-container": [
+        {
+          "id": "workspace-liku.activityView",
+          "name": "Actions",
+          "icon": "$(rocket)",
+          "type": "tree"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run esbuild-base -- --minify",
+    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "esbuild": "npm run esbuild-base -- --sourcemap",
+    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
+    "compile-tests": "tsc -p ./.vscode-test/tsconfig.json",
+    "watch-tests": "tsc -p ./.vscode-test/tsconfig.json -w",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test",
+    "build": "npm run esbuild-base -- --minify && npm run build-webview && npm run copy-webview-assets && npm run copy-media",
+    "watch": "npm-run-all -p esbuild-watch watch-webview watch-webview-css watch-media",
+    "build-webview": "esbuild ./src/webview/main.ts --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap",
+    "watch-webview": "npm run build-webview -- --watch",
+    "copy-webview-assets": "cpx \"src/webview/styles.css\" \"dist/webview\"",
+    "watch-webview-css": "chokidar \"src/webview/styles.css\" -c \"npm run copy-webview-assets\"",
+    "copy-media": "cpx \"media/*.*\" \"dist/media\" -E",
+    "watch-media": "chokidar \"media/*.*\" -c \"npm run copy-media\""
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "18.x",
+    "@types/vscode": "^1.80.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.2",
+    "@typescript-eslint/parser": "^7.0.2",
+    "@vscode/test-cli": "^0.0.6",
+    "@vscode/test-electron": "^2.3.9",
+    "chokidar-cli": "^3.0.0",
+    "cpx": "^1.2.1",
+    "esbuild": "^0.25.4",
+    "eslint": "^8.56.0",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@vscode/webview-ui-toolkit": "^1.4.0"
+  }
+}

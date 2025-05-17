@@ -1,0 +1,63 @@
+body {
+    font-family: var(--vscode-font-family);
+    color: var(--vscode-editor-foreground);
+    background-color: var(--vscode-editor-background);
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+h1 {
+    color: var(--vscode-titleBar-activeForeground); /* Or another appropriate title color */
+    border-bottom: 1px solid var(--vscode-settings-headerBorder);
+    padding-bottom: 10px;
+}
+
+vscode-text-field,
+vscode-dropdown {
+    width: 100%;
+}
+
+#profile-details {
+    border: 1px solid var(--vscode-settings-dropdownBorder, var(--vscode-contrastBorder));
+    padding: 15px;
+    border-radius: 4px;
+    margin-top: 10px;
+    background-color: var(--vscode-sideBar-background, var(--vscode-editorWidget-background)); /* Example background */
+}
+
+#profile-details h2,
+#profile-details h3 {
+    margin-top: 0;
+    margin-bottom: 8px;
+}
+
+#details-extensions {
+    list-style: disc;
+    padding-left: 20px;
+    margin-bottom: 10px;
+}
+
+#details-extensions li {
+    margin-bottom: 4px;
+}
+
+pre {
+    background-color: var(--vscode-textCodeBlock-background, var(--vscode-textBlockQuote-background));
+    padding: 10px;
+    border-radius: 3px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    border: 1px solid var(--vscode-contrastBorder, transparent);
+}
+
+vscode-button[appearance="primary"] {
+    /* Styles for primary button if needed, toolkit usually handles this */
+}

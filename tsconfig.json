@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2020", // Or higher if your vscode.engine supports it
+    "outDir": "dist",
+    "lib": ["ES2020", "dom"], // Added "dom" for webview type support
+    "sourceMap": true,
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
+    "types": ["vscode", "node"] // Ensures 'vscode' and 'node' globals are known
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", ".vscode-test", "src/webview/test"] // Exclude webview tests if any
+}
