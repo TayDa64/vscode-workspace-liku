@@ -55,18 +55,6 @@
     "compile-tests": "tsc -p ./.vscode-test/tsconfig.json",
     "watch-tests": "tsc -p ./.vscode-test/tsconfig.json -w",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "vscode-test",
-    "build": "npm run esbuild-base -- --minify && npm run build-webview && npm run copy-webview-assets && npm run copy-media",
-    "watch": "npm-run-all -p esbuild-watch watch-webview watch-webview-css watch-media",
-    "build-webview": "esbuild ./src/webview/main.ts --bundle --outfile=dist/webview/main.js --format=esm --platform=browser --sourcemap",
-    "watch-webview": "npm run build-webview -- --watch",
-    "copy-webview-assets": "cpx \"src/webview/styles.css\" \"dist/webview\"",
-    "watch-webview-css": "chokidar \"src/webview/styles.css\" -c \"npm run copy-webview-assets\"",
-    "copy-media": "cpx \"media/*.*\" \"dist/media\" -E",
-    "watch-media": "chokidar \"media/*.*\" -c \"npm run copy-media\""
-  },
-  "devDependencies": {
     "@types/mocha": "^10.0.6",
     "@types/node": "18.x",
     "@types/vscode": "^1.80.0",
