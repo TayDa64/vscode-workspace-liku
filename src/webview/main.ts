@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function populateDropdown(profiles: ConfigProfile[]): void {
-        if (!profileDropdown) return;
+        if (!profileDropdown) {return;}
 
         profileDropdown.innerHTML = '';
         const placeholderOption = document.createElement('vscode-option') as VscodeOptionElement;
@@ -88,7 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
         profileDropdown.value = "";
 
         clearDetails();
-        if (applyButton) applyButton.disabled = true;
+        if (applyButton) {applyButton.disabled = true;}
     }
 
     searchBar.addEventListener('input', (event: Event) => {
@@ -108,33 +108,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (selectedProfile) {
             updateDetails(selectedProfile);
-            if (applyButton) applyButton.disabled = false;
+            if (applyButton) {applyButton.disabled = false;}
         } else {
             clearDetails();
-            if (applyButton) applyButton.disabled = true;
+            if (applyButton) {applyButton.disabled = true;}
         }
     });
 
     function updateDetails(profile: ConfigProfile): void {
-        if (!detailsName || !detailsDescription || !detailsExtensions || !detailsSettings) return;
+        if (!detailsName || !detailsDescription || !detailsExtensions || !detailsSettings) {return;}
         detailsName.textContent = profile.name;
         detailsDescription.textContent = profile.description;
         detailsExtensions.innerHTML = profile.extensions.map(ext => `<li>${ext}</li>`).join('');
 
         const settingsSnippet = Object.entries(profile.settings).slice(0, 5)
                                .reduce((obj, [key, value]) => { obj[key] = value; return obj; }, {} as {[key:string]: any});
-        if (Object.keys(profile.settings).length > 5) settingsSnippet["..."] = "(more)";
+        if (Object.keys(profile.settings).length > 5) {settingsSnippet["..."] = "(more)";}
         detailsSettings.textContent = JSON.stringify(settingsSnippet, null, 2);
     }
 
     function clearDetails(): void {
-        if (!detailsName || !detailsDescription || !detailsExtensions || !detailsSettings) return;
+        if (!detailsName || !detailsDescription || !detailsExtensions || !detailsSettings) {return;}
         detailsName.textContent = 'Select a profile';
         detailsDescription.textContent = '';
         detailsExtensions.innerHTML = '';
         detailsSettings.textContent = '';
         selectedProfile = null;
-        if(applyButton) applyButton.disabled = true;
+        if(applyButton) {applyButton.disabled = true;}
     }
 
     applyButton.addEventListener('click', () => {
