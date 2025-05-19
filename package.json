@@ -48,7 +48,7 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run build-production",
+    "vscode:prepublish": "npm run compile",
     "build-production": "npm run esbuild-base -- --minify && npm run build-webview -- --minify && npm run copy-webview-assets && npm run copy-media",
     "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
     "build": "npm run esbuild-base -- --sourcemap && npm run build-webview -- --sourcemap && npm run copy-webview-assets && npm run copy-media",
@@ -60,7 +60,8 @@
     "watch-webview-css": "chokidar \"src/webview/styles.css\" -c \"npm run copy-webview-assets\"",
     "copy-media": "cpx \"media/*.*\" \"dist/media\"",
     "watch-media": "chokidar \"media/*.*\" -c \"npm run copy-media\"",
-    "watch": "npm-run-all -p esbuild-watch watch-webview watch-webview-css watch-media",
+    "compile": "esbuild ./src/extension.ts ./src/webview/main.ts --bundle --outdir=dist --platform=node --external:vscode --format=cjs --sourcemap",
+    "watch": "esbuild ./src/extension.ts ./src/webview/main.ts --bundle --outdir=dist --platform=node --external:vscode --format=cjs --sourcemap --watch",
     "lint": "eslint src --ext ts",
     "test": "echo \"Error: no test specified\" && exit 1",
     "compile-tests": "tsc -p ./.vscode-test/tsconfig.json",
