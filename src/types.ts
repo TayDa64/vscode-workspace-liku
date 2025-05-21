@@ -28,7 +28,7 @@ export const DEFAULT_PROFILES: WorkspaceProfile[] = [
         recommendedExtensions: [
             { id: "dbaeumer.vscode-eslint", name: "ESLint" },
             { id: "esbenp.prettier-vscode", name: "Prettier - Code formatter" },
-            { id: "msjsdiag.debugger-for-chrome", name: "Debugger for Chrome" } // Example
+            { id: "msjsdiag.debugger-for-chrome", name: "Debugger for Chrome" }
         ],
         keySettingsSnippet: [
             { key: "editor.formatOnSave", value: true, description: "Enable format on save" },
@@ -42,7 +42,7 @@ export const DEFAULT_PROFILES: WorkspaceProfile[] = [
                 description: "Default formatter for JS/TS files"
             }
         ],
-        isUserDefined: false,
+        isUserDefined: false, // Crucial: Mark built-in profiles
     },
     {
         id: "python-backend-django",
@@ -66,6 +66,6 @@ export const DEFAULT_PROFILES: WorkspaceProfile[] = [
                 description: "Default formatter for Python files"
             }
         ],
-        isUserDefined: false,
+        isUserDefined: false, // Crucial: Mark built-in profiles
     },
 ];

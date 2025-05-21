@@ -1,59 +1,110 @@
-// esbuild.js (add this or modify existing)
+// esbuild.js
 const esbuild = require('esbuild');
-const path = require('path'); // For joining paths
+const fs = require('node:fs'); // Use node:fs for clarity
+const path = require('node:path');
+
+// Ensure dist directory and webview subdirectory exist
+const projectRoot = __dirname; // Should be the root of your project
+const distDir = path.join(projectRoot, 'dist');
+const webviewDistDir = path.join(distDir, 'webview');
+
+try {
+  if (!fs.existsSync(distDir)) {
+    fs.mkdirSync(distDir, { recursive: true }); // recursive true is safer
+  }
+  if (!fs.existsSync(webviewDistDir)) {
+    fs.mkdirSync(webviewDistDir, { recursive: true });
+  }
+} catch (err) {
+  console.error('Error creating dist directories:', err);
+  process.exit(1);
+}
 
 async function build() {
+  console.log('Starting build process...');
   const commonConfig = {
     bundle: true,
-    sourcemap: true,
-    external: ['vscode'],
-    // tsconfig: 'tsconfig.json', // if you have one and want esbuild to use it
+    sourcemap: true, // Always good for development debugging
+    minify: false,   // Keep false for easier debugging initially
+    logLevel: 'info', // Provides feedback from esbuild
   };
 
   try {
-    // Extension Code
+    // 1. Build Extension Host Script (extension.ts)
+    console.log('Building extension host script...');
     await esbuild.build({
       ...commonConfig,
-      entryPoints: ['src/extension.ts'],
-      outfile: 'dist/extension.js',
+      entryPoints: [path.join(projectRoot, 'src', 'extension.ts')],
+      outfile: path.join(distDir, 'extension.js'),
       platform: 'node',
       format: 'cjs',
+      external: ['vscode'],
     });
-    console.log('✅ Extension build complete: dist/extension.js');
+    console.log(`✅ Extension host build complete: ${path.join(distDir, 'extension.js')}`);
 
-    // Webview Code
+    // 2. Build Webview Script (webview/main.ts)
+    console.log('Building webview script...');
     await esbuild.build({
       ...commonConfig,
-      entryPoints: ['src/webview/main.ts'],
-      outfile: 'dist/webview.js',
-      platform: 'browser', // Target browser environment
-      format: 'iife',      // IIFE is good for webview scripts to avoid polluting global scope
-      external: [], // No 'vscode' external for webview, it uses acquireVsCodeApi
+      entryPoints: [path.join(projectRoot, 'src', 'webview', 'main.ts')],
+      outfile: path.join(webviewDistDir, 'main.js'), // Corrected output path
+      platform: 'browser',
+      format: 'iife',
     });
-    console.log('✅ Webview script build complete: dist/webview.js');
+    console.log(`✅ Webview script build complete: ${path.join(webviewDistDir, 'main.js')}`);
+
+    console.log('Build process finished successfully.');
 
   } catch (e) {
-    console.error('Build failed:', e);
-    process.exit(1);
+    console.error('🛑 Build failed:', e);
+    process.exit(1); // Exit with error code if build fails
   }
 }
 
-// Basic watch functionality (optional, for development)
+// Watch mode logic
 if (process.argv.includes('--watch')) {
-  console.log('👀 Watching for changes...');
-  const chokidar = require('chokidar'); // npm install chokidar --save-dev
-  
-  // Rebuild extension
-  chokidar.watch(['src/**/*.ts', '!src/webview/**/*.ts']).on('all', () => {
-    console.log('Extension file changed, rebuilding extension...');
-    esbuild.build({ /* ... extension config ... */ }).catch(e => console.error("Extension rebuild failed:", e));
-  });
+  console.log('👀 Watch mode enabled. Initial build...');
+  build().then(() => { // Perform initial build first
+    const chokidar = require('chokidar'); // Moved require here so it's only needed for watch
 
-  // Rebuild webview script
-  chokidar.watch('src/webview/**/*.ts').on('all', () => {
-    console.log('Webview file changed, rebuilding webview script...');
-    esbuild.build({ /* ... webview config ... */ }).catch(e => console.error("Webview script rebuild failed:", e));
+    console.log('Setting up watchers...');
+    const extensionWatcher = chokidar.watch([
+      path.join(projectRoot, 'src', '**', '*.ts'),
+      `!${path.join(projectRoot, 'src', 'webview', '**', '*.ts')}`, // Exclude webview files
+      `!${path.join(projectRoot, 'src', '**', '*.test.ts')}` // Exclude test files
+    ], { ignored: /(^|[\/\\])\../, persistent: true }); // Ignore dotfiles
+
+    const webviewWatcher = chokidar.watch(
+      path.join(projectRoot, 'src', 'webview', '**', '*.ts'),
+      { ignored: /(^|[\/\\])\../, persistent: true }
+    );
+
+    extensionWatcher.on('change', async (filePath) => {
+      console.log(`Extension file changed: ${filePath}. Rebuilding extension host...`);
+      try {
+        await esbuild.build({
+          ...commonConfig, entryPoints: [path.join(projectRoot, 'src', 'extension.ts')],
+          outfile: path.join(distDir, 'extension.js'), platform: 'node', format: 'cjs', external: ['vscode'],
+        });
+        console.log('✅ Extension host rebuild complete.');
+      } catch (e) { console.error("🛑 Extension host rebuild failed:", e); }
+    });
+
+    webviewWatcher.on('change', async (filePath) => {
+      console.log(`Webview file changed: ${filePath}. Rebuilding webview script...`);
+      try {
+        await esbuild.build({
+          ...commonConfig, entryPoints: [path.join(projectRoot, 'src', 'webview', 'main.ts')],
+          outfile: path.join(webviewDistDir, 'main.js'), platform: 'browser', format: 'iife',
+        });
+        console.log('✅ Webview script rebuild complete.');
+      } catch (e) { console.error("🛑 Webview script rebuild failed:", e); }
+    });
+    console.log('Watchers active.');
+  }).catch(err => {
+    console.error("🛑 Initial build for watch mode failed:", err);
+    process.exit(1);
   });
 } else {
-  build();
+  build(); // Perform a single build
 }

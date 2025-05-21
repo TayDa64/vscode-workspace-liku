@@ -17,11 +17,15 @@ interface WorkspaceProfileWeb {
 
 (function () {
     const vscode = acquireVsCodeApi();
-    const state = vscode.getState() || { selectedProfileId: null }; // Persist selected profile
+    const persistedState = vscode.getState() || { selectedProfileId: null, lastSearchTerm: "" };
+    vscode.setState(persistedState); // Initialize or restore state
 
-    // DOM Elements
-    const searchInput = document.getElementById('searchConfigurations') as HTMLInputElement;
-    const profileSelector = document.getElementById('profileSelector') as HTMLSelectElement;
+    // DOM Elements for new Combo Search
+    const comboSearchInput = document.getElementById('comboSearchInput') as HTMLInputElement;
+    const comboToggleBtn = document.getElementById('comboToggleBtn') as HTMLButtonElement;
+    const comboResultsList = document.getElementById('comboResultsList') as HTMLUListElement;
+
+    // Other DOM Elements (Details section, Modal, etc. - largely same as before)
     const createNewProfileBtn = document.getElementById('createNewProfileBtn') as HTMLButtonElement;
     const profileDetailsSection = document.getElementById('profileDetails') as HTMLDivElement;
     const profileNameEl = document.getElementById('profileName') as HTMLHeadingElement;
@@ -29,8 +33,8 @@ interface WorkspaceProfileWeb {
     const recommendedExtensionsListEl = document.getElementById('recommendedExtensionsList') as HTMLUListElement;
     const keySettingsSnippetContentEl = document.getElementById('keySettingsSnippetContent') as HTMLPreElement;
     const applyButton = document.getElementById('applyConfigurationButton') as HTMLButtonElement;
-    const editCurrentProfileBtn = document.getElementById('editCurrentProfileBtn') as HTMLButtonElement;
     const cloneCurrentProfileBtn = document.getElementById('cloneCurrentProfileBtn') as HTMLButtonElement;
+    const editCurrentProfileBtn = document.getElementById('editCurrentProfileBtn') as HTMLButtonElement;
     const deleteCurrentProfileBtn = document.getElementById('deleteCurrentProfileBtn') as HTMLButtonElement;
     const editProfileModal = document.getElementById('editProfileModal') as HTMLDivElement;
     const modalTitle = document.getElementById('modalTitle') as HTMLHeadingElement;
@@ -42,252 +46,350 @@ interface WorkspaceProfileWeb {
     const saveProfileButton = document.getElementById('saveProfileButton') as HTMLButtonElement;
     const cancelEditProfileButton = document.getElementById('cancelEditProfileButton') as HTMLButtonElement;
 
-    let allProfiles: WorkspaceProfileWeb[] = [];
-    let userProfiles: WorkspaceProfileWeb[] = []; // Store user profiles for deletion checks
-    let currentEditingProfileOriginalId: string | null = null; // Stores the ID of the profile being edited (if it's an existing one)
-    let isCloningOperation: boolean = false;
+    let allProfilesCache: WorkspaceProfileWeb[] = [];
+    let currentEditingProfileOriginalId: string | null = null;
+    let isCloneOperationIntent: boolean = false;
+    let activeSuggestionIndex = -1; // For keyboard navigation in combo list
 
     // --- Initialization ---
+    console.log("[Liku Webview] Initializing. Requesting profiles.");
     vscode.postMessage({ command: 'getProfiles' });
+    comboSearchInput.value = persistedState.lastSearchTerm || "";
 
-    // --- Event Listeners ---
-    searchInput.addEventListener('input', () => filterAndDisplayProfiles(searchInput.value));
-    profileSelector.addEventListener('change', handleProfileSelectionChange);
-    applyButton.addEventListener('click', handleApplyConfiguration);
-    createNewProfileBtn.addEventListener('click', () => openEditModal(null));
-    editCurrentProfileBtn.addEventListener('click', () => {
-        const selectedId = profileSelector.value;
-        const profile = allProfiles.find(p => p.id === selectedId);
-        if (profile) {openEditModal(profile, !profile.isUserDefined);} // Clone if built-in, edit if user-defined
-    });
-    deleteCurrentProfileBtn.addEventListener('click', handleDeleteProfile);
-    saveProfileButton.addEventListener('click', handleSaveProfile);
-    cancelEditProfileButton.addEventListener('click', closeEditModal);
-    cloneCurrentProfileBtn.addEventListener('click', () => {
-        const selectedId = profileSelector.value;
-        const profile = allProfiles.find(p => p.id === selectedId);
-        if (profile) {openEditModal(profile, true);} // Clone if built-in, edit if user-defined
-    });
-    // --- Functions ---
-    function populateProfileSelectorWithOptions(profilesToDisplay: WorkspaceProfileWeb[]) {
-        profileSelector.innerHTML = '<option value="">-- Select a Profile --</option>'; // Clear
-        const createOption = (value: string, text: string) => {
-            const option = document.createElement('option');
-            option.value = value; option.textContent = text; return option;
-        };
 
-        const builtIns = profilesToDisplay.filter(p => !p.isUserDefined);
-        const userDefs = profilesToDisplay.filter(p => p.isUserDefined);
-
-        if (builtIns.length > 0) {
-            const optGroup = document.createElement('optgroup'); optGroup.label = "Built-in Profiles";
-            builtIns.forEach(p => optGroup.appendChild(createOption(p.id, p.name)));
-            profileSelector.appendChild(optGroup);
-        }
-        if (userDefs.length > 0) {
-            const optGroup = document.createElement('optgroup'); optGroup.label = "User Profiles";
-            userDefs.forEach(p => optGroup.appendChild(createOption(p.id, p.name)));
-            profileSelector.appendChild(optGroup);
-        }
-    }
-    
-    function filterAndDisplayProfiles(searchTerm: string) {
+    // --- Combo Search/Select Logic ---
+    function renderComboResults(searchTerm: string = "") {
         const lowerSearchTerm = searchTerm.toLowerCase();
-        const filtered = allProfiles.filter(p =>
+        const filteredProfiles = allProfilesCache.filter(p =>
             p.name.toLowerCase().includes(lowerSearchTerm) ||
             (p.description && p.description.toLowerCase().includes(lowerSearchTerm))
         );
-        populateProfileSelectorWithOptions(filtered);
-        // Try to re-select previous or persisted selection
-        if (state.selectedProfileId && filtered.some(p => p.id === state.selectedProfileId)) {
-            profileSelector.value = state.selectedProfileId;
-        }
-        handleProfileSelectionChange(); // Update details based on current (possibly new) selection
-    }
 
-    function handleProfileSelectionChange() {
-        const selectedProfileId = profileSelector.value;
-        state.selectedProfileId = selectedProfileId; // Persist for next time webview opens
-        vscode.setState(state);
+        comboResultsList.innerHTML = ''; // Clear old results
+        activeSuggestionIndex = -1;
 
-        const selectedProfile = allProfiles.find(p => p.id === selectedProfileId);
-        profileDetailsSection.classList.toggle('hidden', !selectedProfile);
-        applyButton.disabled = !selectedProfile;
-
-        if (selectedProfile) {
-            profileNameEl.textContent = `${selectedProfile.name} ${selectedProfile.isUserDefined ? '(User)' : '(Built-in)'}`;
-            profileDescriptionEl.textContent = selectedProfile.description || '';
-            recommendedExtensionsListEl.innerHTML = '';
-            selectedProfile.recommendedExtensions.forEach(ext => {
-                const li = document.createElement('li');
-                const link = document.createElement('a');
-                link.textContent = ext.name ? `${ext.name} (${ext.id})` : ext.id;
-                link.title = `View ${ext.id} on Marketplace`;
-                link.href = "#"; // Prevent page jump
-                link.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    vscode.postMessage({ command: 'openMarketplacePage', extensionId: ext.id });
-                });
-                li.appendChild(link);
-                recommendedExtensionsListEl.appendChild(li);
-            });
-            const settingsObject: any = {};
-            selectedProfile.keySettingsSnippet.forEach(s => { settingsObject[s.key] = s.value; });
-            keySettingsSnippetContentEl.textContent = JSON.stringify(settingsObject, null, 2);
-
-            editCurrentProfileBtn.textContent = "Edit Profile";
-            editCurrentProfileBtn.title = "Edit this user profile";
-            editCurrentProfileBtn.classList.toggle('hidden', !selectedProfile.isUserDefined); // Edit only for user
-            editCurrentProfileBtn.disabled = !selectedProfile.isUserDefined;
-            deleteCurrentProfileBtn.classList.toggle('hidden', !selectedProfile.isUserDefined);
-            deleteCurrentProfileBtn.disabled = !selectedProfile.isUserDefined; // Explicitly disable
-            cloneCurrentProfileBtn.classList.remove('hidden'); // Clone button always visible if profile selected
-            cloneCurrentProfileBtn.disabled = false;
-        } else {
-            // ...
-            editCurrentProfileBtn.classList.add('hidden');
-            cloneCurrentProfileBtn.classList.add('hidden');
-            deleteCurrentProfileBtn.classList.add('hidden');
-            deleteCurrentProfileBtn.disabled = true;
-        }
-    }
-
-    function handleApplyConfiguration() {
-        if (profileSelector.value) {
-            vscode.postMessage({ command: 'applyConfiguration', profileId: profileSelector.value });
-        }
-    }
-
-    function openEditModal(profile: WorkspaceProfileWeb | null, isCloneIntent: boolean = false) {
-       // currentEditingProfileOriginalId = (profile && profile.isUserDefined && !isCloneIntent) ? profile.id : null;
-        isCloningOperation = !!(isCloneIntent || (profile && !profile.isUserDefined)); // True if cloning or "editing" a built-in
-
-        if (profile && !isCloningOperation && profile.isUserDefined) {
-    // This is a direct edit of an existing user profile
-           currentEditingProfileOriginalId = profile.id;
-           // modalTitle.textContent = isCloningOperation ? `Clone Profile: ${profile.name}` : `Edit Profile: ${profile.name}`;
-           // editProfileNameInput.value = isCloningOperation ? `${profile.name} (Copy)` : profile.name;
-           // ID field: empty if cloning/new, prefill if editing existing user profile (and make read-only)
-           // editProfileIdInput.value = (isCloningOperation || !profile.isUserDefined) ? "" : profile.id;
-           // editProfileIdInput.readOnly = !!currentEditingProfileOriginalId; // ReadOnly only if editing an existing user profile
-            
-            // editProfileDescriptionTextarea.value = profile.description || "";
-            // editRecommendedExtensionsTextarea.value = profile.recommendedExtensions
-            //     .map(ext => ext.name ? `${ext.id},${ext.name}` : ext.id).join('\n');
-            // const settingsObj: any = {};
-            // profile.keySettingsSnippet.forEach(s => settingsObj[s.key] = s.value);
-            // editKeySettingsTextarea.value = JSON.stringify(settingsObj, null, 2);
-         } else {
-    // This is either a new profile, or a clone operation (of built-in or user)
-            currentEditingProfileOriginalId = null;
+        if (filteredProfiles.length === 0) {
+            const li = document.createElement('li');
+            li.className = 'no-results';
+            li.textContent = searchTerm ? "No profiles found." : "No profiles available.";
+            comboResultsList.appendChild(li);
+            return; // Don't show group labels if no results
         }
         
-        // else { // New profile
-        //     modalTitle.textContent = "Create New Profile";
-        //     currentEditingProfileOriginalId = null; isCloningOperation = false;
-        //     [editProfileNameInput, editProfileIdInput, editProfileDescriptionTextarea, editRecommendedExtensionsTextarea]
-        //         .forEach(el => el.value = "");
-        //     editKeySettingsTextarea.value = "{\n  \n}";
-        //     editProfileIdInput.readOnly = false;
-        // }
+        const builtIns = filteredProfiles.filter(p => !p.isUserDefined);
+        const userDefs = filteredProfiles.filter(p => p.isUserDefined);
+
+        const addProfileOption = (profile: WorkspaceProfileWeb) => {
+            const li = document.createElement('li');
+            li.setAttribute('role', 'option');
+            li.dataset.id = profile.id;
+            li.textContent = profile.name;
+            if (profile.id === persistedState.selectedProfileId) {
+                li.setAttribute('aria-selected', 'true');
+                // You might add a class for styling current selection in list if needed
+            }
+            li.addEventListener('mousedown', (e) => { // Mousedown preferred over click for lists that hide on blur
+                e.preventDefault();
+                selectProfile(profile.id, profile.name);
+            });
+            comboResultsList.appendChild(li);
+        };
+        
+        const addGroupLabel = (text: string) => {
+            const li = document.createElement('li');
+            li.className = 'group-label';
+            li.textContent = text;
+            li.setAttribute('role', 'separator');
+            comboResultsList.appendChild(li);
+        };
+
+        if (builtIns.length > 0) {
+            if (searchTerm === "" || filteredProfiles.length === allProfilesCache.length) {
+                addGroupLabel('Built-in Profiles');
+            }
+            builtIns.forEach(addProfileOption);
+        }
+        if (userDefs.length > 0) {
+            if (searchTerm === "" || filteredProfiles.length === allProfilesCache.length) {
+                 if (builtIns.length > 0 && (searchTerm === "" || filteredProfiles.length === allProfilesCache.length)) { /* only add if builtins also shown as group */ }
+                 addGroupLabel('User Profiles');
+            }
+            userDefs.forEach(addProfileOption);
+        }
+    }
+
+    function selectProfile(profileId: string, profileName: string) {
+        console.log("[Liku Webview] Profile selected via combo:", profileId);
+        persistedState.selectedProfileId = profileId;
+        persistedState.lastSearchTerm = profileName; // Store selected name as last search term
+        vscode.setState(persistedState);
+
+        comboSearchInput.value = profileName; // Update input field
+        comboResultsList.classList.add('hidden'); // Hide the list
+
+        const selectedProfile = allProfilesCache.find(p => p.id === profileId);
+        updateProfileDetailsUI(selectedProfile);
+    }
+
+    function updateProfileDetailsUI(profile: WorkspaceProfileWeb | undefined | null) {
+        profileDetailsSection.classList.toggle('hidden', !profile);
+        applyButton.disabled = !profile;
+        cloneCurrentProfileBtn.classList.toggle('hidden', !profile);
+        cloneCurrentProfileBtn.disabled = !profile;
+
+        if (profile) {
+            profileNameEl.textContent = `${profile.name} ${profile.isUserDefined ? '(User)' : '(Built-in)'}`;
+            profileDescriptionEl.textContent = profile.description || '';
+            recommendedExtensionsListEl.innerHTML = '';
+            (profile.recommendedExtensions || []).forEach(ext => {
+                const li = document.createElement('li'); const link = document.createElement('a');
+                link.textContent = ext.name ? `${ext.name} (${ext.id})` : ext.id;
+                link.title = `View ${ext.id} on Marketplace`; link.href = "#";
+                link.addEventListener('click', (e) => { e.preventDefault(); vscode.postMessage({ command: 'openMarketplacePage', extensionId: ext.id }); });
+                li.appendChild(link); recommendedExtensionsListEl.appendChild(li);
+            });
+            const settingsObj: any = {};
+            (profile.keySettingsSnippet || []).forEach(s => { settingsObj[s.key] = s.value; });
+            keySettingsSnippetContentEl.textContent = JSON.stringify(settingsObj, null, 2);
+
+            editCurrentProfileBtn.classList.toggle('hidden', !profile.isUserDefined);
+            editCurrentProfileBtn.disabled = !profile.isUserDefined;
+            deleteCurrentProfileBtn.classList.toggle('hidden', !profile.isUserDefined);
+            deleteCurrentProfileBtn.disabled = !profile.isUserDefined;
+        } else {
+            // Clear details and hide/disable action buttons
+            profileNameEl.textContent = ''; profileDescriptionEl.textContent = '';
+            recommendedExtensionsListEl.innerHTML = ''; keySettingsSnippetContentEl.textContent = '';
+            editCurrentProfileBtn.classList.add('hidden'); deleteCurrentProfileBtn.classList.add('hidden');
+        }
+    }
+    
+    comboSearchInput.addEventListener('input', () => {
+        persistedState.lastSearchTerm = comboSearchInput.value; // Persist search term as user types
+        vscode.setState(persistedState);
+        renderComboResults(comboSearchInput.value);
+        if (!comboResultsList.classList.contains('hidden') && comboResultsList.children.length > 0) {
+            // If list is visible and has items, don't hide it on input
+        } else if (comboResultsList.children.length > 0) {
+             comboResultsList.classList.remove('hidden'); // Show if there are results
+        }
+    });
+    comboSearchInput.addEventListener('focus', () => {
+        renderComboResults(comboSearchInput.value); // Show (potentially filtered) list on focus
+        comboResultsList.classList.remove('hidden');
+    });
+    comboSearchInput.addEventListener('blur', () => {
+        setTimeout(() => { // Delay to allow click on list items
+            if (!comboResultsList.matches(':hover') && !saveProfileButton.matches(':focus')) { // Don't hide if mouse is over list or save button has focus (modal context)
+                comboResultsList.classList.add('hidden');
+            }
+        }, 150);
+    });
+    comboToggleBtn.addEventListener('click', () => {
+        if (comboResultsList.classList.contains('hidden')) {
+            renderComboResults(""); // Show all profiles
+            comboResultsList.classList.remove('hidden');
+            comboSearchInput.focus();
+        } else {
+            comboResultsList.classList.add('hidden');
+        }
+    });
+    comboSearchInput.addEventListener('keydown', (e) => {
+        const items = Array.from(comboResultsList.querySelectorAll('li[role="option"]')) as HTMLLIElement[];
+        if (items.length === 0 || comboResultsList.classList.contains('hidden')) {
+            return;
+        }
+
+        let handled = false;
+        if (e.key === 'ArrowDown') {
+            activeSuggestionIndex = Math.min(activeSuggestionIndex + 1, items.length - 1);
+            handled = true;
+        } else if (e.key === 'ArrowUp') {
+            activeSuggestionIndex = Math.max(activeSuggestionIndex - 1, 0);
+            handled = true;
+        } else if (e.key === 'Enter') {
+            if (activeSuggestionIndex >= 0 && activeSuggestionIndex < items.length) {
+                items[activeSuggestionIndex].dispatchEvent(new MouseEvent('mousedown', {bubbles: true})); // Simulate click
+            }
+            handled = true;
+        } else if (e.key === 'Escape') {
+            comboResultsList.classList.add('hidden');
+            handled = true;
+        }
+        if (handled) {
+            e.preventDefault();
+            items.forEach((item, index) => item.classList.toggle('active-suggestion', index === activeSuggestionIndex));
+            if (activeSuggestionIndex >= 0 && items[activeSuggestionIndex]) {
+                items[activeSuggestionIndex].scrollIntoView({ block: 'nearest' });
+            }
+        }
+    });
+
+
+    // --- Other Event Listeners & Modal Logic (largely same as your stable version) ---
+    applyButton.addEventListener('click', () => {
+        if (persistedState.selectedProfileId) {
+            vscode.postMessage({ command: 'applyConfiguration', profileId: persistedState.selectedProfileId });
+        }
+    });
+    createNewProfileBtn.addEventListener('click', () => openEditModal(null, false));
+    cloneCurrentProfileBtn.addEventListener('click', () => {
+        const profile = allProfilesCache.find(p => p.id === persistedState.selectedProfileId);
+        if (profile) { openEditModal(profile, true); }
+    });
+    editCurrentProfileBtn.addEventListener('click', () => {
+        const profile = allProfilesCache.find(p => p.id === persistedState.selectedProfileId && p.isUserDefined);
+        if (profile) { openEditModal(profile, false); }
+    });
+    deleteCurrentProfileBtn.addEventListener('click', handleDeleteProfile); // Ensure this is correct
+    saveProfileButton.addEventListener('click', handleSaveProfile);
+    cancelEditProfileButton.addEventListener('click', closeEditModal);
+
+    // openEditModal, closeEditModal, handleSaveProfile - use the robust versions from previous attempts
+    // Ensure handleSaveProfile's ID generation and 'isEditingExisting' logic is sound.
+    // The versions from the "Complete Code for src/webview/main.ts" (your request before this one)
+    // for these modal functions were quite refined. Let's assume they are mostly correct here.
+    // Key function: openEditModal
+    function openEditModal(profile: WorkspaceProfileWeb | null, isCloneIntentReceived: boolean) {
+        isCloneOperationIntent = isCloneIntentReceived;
+        currentEditingProfileOriginalId = (profile && profile.isUserDefined && !isCloneOperationIntent) ? profile.id : null;
+
+        if (profile) {
+            modalTitle.textContent = isCloneOperationIntent ? `Clone Profile: ${profile.name}` : `Edit Profile: ${profile.name}`;
+            editProfileNameInput.value = isCloneOperationIntent ? `${profile.name} (Copy)` : profile.name;
+            if (isCloneOperationIntent || !profile.isUserDefined) { // Cloning or "viewing" built-in
+                editProfileIdInput.value = ""; 
+                editProfileIdInput.readOnly = false;
+            } else { // Direct edit of a user profile
+                editProfileIdInput.value = profile.id; 
+                editProfileIdInput.readOnly = true; 
+            }
+            editProfileDescriptionTextarea.value = profile.description || "";
+            editRecommendedExtensionsTextarea.value = (profile.recommendedExtensions || [])
+                .map(ext => ext.name ? `${ext.id},${ext.name}` : ext.id).join('\n');
+            const settingsObj: any = {};
+            (profile.keySettingsSnippet || []).forEach(s => settingsObj[s.key] = s.value);
+            editKeySettingsTextarea.value = JSON.stringify(settingsObj, null, 2);
+        } else { /* New profile setup (same as before) */ 
+            modalTitle.textContent = "Create New Profile";
+            currentEditingProfileOriginalId = null; isCloneOperationIntent = false;
+            [editProfileNameInput, editProfileIdInput, editProfileDescriptionTextarea, editRecommendedExtensionsTextarea]
+                .forEach(el => el.value = "");
+            editKeySettingsTextarea.value = "{\n  \n}";
+            editProfileIdInput.readOnly = false;
+        }
         editProfileModal.classList.remove('hidden');
         editProfileNameInput.focus();
     }
 
     function closeEditModal() {
         editProfileModal.classList.add('hidden');
-        currentEditingProfileOriginalId = null; isCloningOperation = false;
+        currentEditingProfileOriginalId = null;
+        isCloneOperationIntent = false;
     }
 
+    // handleSaveProfile - Critical for correct save/update
     function handleSaveProfile() {
-    const name = editProfileNameInput.value.trim();
-    let id = editProfileIdInput.value.trim(); // User-entered ID
+        const name = editProfileNameInput.value.trim();
+        let idFromInput = editProfileIdInput.value.trim();
+        if (!name) { vscode.postMessage({ command: 'showError', text: "Profile Name is required." }); return; }
 
-    if (!name) { vscode.postMessage({ command: 'showError', text: "Profile Name is required." }); return; }
-
-    // If it's a NEW profile (currentEditingProfileOriginalId is null) AND user left ID blank
-    if (!currentEditingProfileOriginalId && !id && name) {
-        id = name.toLowerCase()
-                 .replace(/\s+/g, '-') // Replace spaces with hyphens
-                 .replace(/[^\w.-]/g, ''); // Remove non-alphanumeric (except hyphen, dot)
-        if (!id) { // If name resulted in empty ID (e.g. all special chars)
-            vscode.postMessage({ command: 'showError', text: "Could not auto-generate ID from name. Please provide a valid ID." });
-            return;
+        let finalId = idFromInput;
+        if (currentEditingProfileOriginalId) { // Editing an existing user profile
+             finalId = currentEditingProfileOriginalId; // ID must not change
+             if (idFromInput !== currentEditingProfileOriginalId && !editProfileIdInput.readOnly) {
+                // This should ideally not happen if readOnly is set correctly
+                vscode.postMessage({ command: 'showError', text: "Error: Attempted to change ID of existing profile." }); return;
+             }
+        } else { // New profile or clone
+            if (!idFromInput && name) { // Auto-generate ID if blank for new/clone
+                finalId = name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w.-]/g, '');
+                if (!finalId) { vscode.postMessage({ command: 'showError', text: "Could not auto-generate ID. Please provide one."}); return; }
+            } else if (!idFromInput) { // ID still blank
+                vscode.postMessage({ command: 'showError', text: "Profile ID is required." }); return;
+            }
         }
-        editProfileIdInput.value = id; // Update the input field to show the generated ID
-    } else if (!id) { // ID is still blank (e.g. user cleared it, or it's an edit with a blank ID somehow)
-        vscode.postMessage({ command: 'showError', text: "Profile ID is required." });
-        return;
-    }
-      // In handleSaveProfile in webview
-    if (currentEditingProfileOriginalId && id !== currentEditingProfileOriginalId) {
-        vscode.postMessage({ command: 'showError', text: "Profile ID cannot be changed when editing an existing profile." });
-        editProfileIdInput.value = currentEditingProfileOriginalId; // Revert
-        return;
-    }
-
+        
         const description = editProfileDescriptionTextarea.value.trim();
         const rawExt = editRecommendedExtensionsTextarea.value.split('\n').map(l => l.trim()).filter(Boolean);
-        // Inside handleSaveProfile, after splitting lines
         const recommendedExtensions: RecommendedExtensionWeb[] = rawExt.map(line => {
-        const parts = line.split(',');
-        const extId = parts[0].trim();
-        if (!extId) { return null; } // Skip if ID is empty after trimming
-        const extName = parts.length > 1 ? parts.slice(1).join(',').trim() : undefined;
-            return { id: extId, name: extName };
-    }).filter(ext => ext !== null && ext.id) as RecommendedExtensionWeb[]; // Filter out nulls and ensure ID
-
+            const parts = line.split(','); const extId = parts[0].trim();
+            if (!extId) { return null; }
+            return { id: extId, name: parts.length > 1 ? parts.slice(1).join(',').trim() : undefined };
+        }).filter(ext => ext !== null) as RecommendedExtensionWeb[];
         let keySettingsSnippet: KeySettingWeb[];
         try {
             const settingsObj = JSON.parse(editKeySettingsTextarea.value || "{}");
             keySettingsSnippet = Object.entries(settingsObj).map(([k, v]) => ({ key: k, value: v }));
         } catch (e: any) { vscode.postMessage({ command: 'showError', text: `Invalid JSON in Key Settings: ${e.message}` }); return; }
 
-        const profileData: WorkspaceProfileWeb = {
-            id, name, description, recommendedExtensions, keySettingsSnippet, isUserDefined: true
-        };
+        const profileData: WorkspaceProfileWeb = { id: finalId, name, description, recommendedExtensions, keySettingsSnippet, isUserDefined: true };
         vscode.postMessage({
-            command: 'saveUserProfile',
-            profileData,
-            isEditing: !!currentEditingProfileOriginalId // True if we were editing an existing user profile
+            command: 'saveUserProfile', profileData,
+            isEditingExisting: !!currentEditingProfileOriginalId && !isCloneOperationIntent // True only for direct edit of existing user profile
         });
     }
 
-    // Inside handleDeleteProfile()
+    // handleDeleteProfile - Ensure it uses the current selection from combo box (persistedState.selectedProfileId)
     function handleDeleteProfile() {
-        const selectedId = profileSelector.value;
-        // Find from allProfiles to check isUserDefined flag, but delete from userProfiles list conceptually
-        const profileToDelete = allProfiles.find(p => p.id === selectedId);
-
-        if (profileToDelete && profileToDelete.isUserDefined) { // Crucial check
-            if (confirm(`Are you sure you want to delete the user profile "${profileToDelete.name}"? This cannot be undone.`)) {
-                vscode.postMessage({ command: 'deleteUserProfile', profileId: selectedId });
+        const profileIdToDelete = persistedState.selectedProfileId;
+        if (!profileIdToDelete) {
+            vscode.postMessage({ command: 'showInfo', text: "No profile selected to delete." });
+            return;
+        }
+        const profileObject = allProfilesCache.find(p => p.id === profileIdToDelete);
+        if (profileObject && profileObject.isUserDefined) {
+            if (confirm(`Are you sure you want to delete the user profile "${profileObject.name}"? This cannot be undone.`)) {
+                console.log("[Liku Webview] Requesting deletion of user profile:", profileIdToDelete);
+                vscode.postMessage({ command: 'deleteUserProfile', profileId: profileIdToDelete });
             }
-        } else if (profileToDelete && !profileToDelete.isUserDefined) {
+        } else if (profileObject && !profileObject.isUserDefined) {
             vscode.postMessage({ command: 'showInfo', text: "Built-in profiles cannot be deleted." });
         } else {
-            vscode.postMessage({ command: 'showError', text: "No profile selected or profile not found for deletion." });
+            vscode.postMessage({ command: 'showError', text: "Selected profile not found or cannot be deleted."});
         }
     }
 
-    // Listen for messages from the extension
+
+    // --- Message Handling ---
     window.addEventListener('message', event => {
         const message = event.data;
+        console.log("[Liku Webview] Message received:", message.command, message);
         switch (message.command) {
             case 'profilesLoaded':
-                allProfiles = [...message.builtInProfiles, ...message.userProfiles]
-                                .sort((a,b) => a.name.localeCompare(b.name));
-                userProfiles = message.userProfiles; // Keep a separate list for delete checks
-                filterAndDisplayProfiles(searchInput.value); // This will repopulate and re-select
+                const builtIns = (message.builtInProfiles || []).map((p: any) => ({...p, isUserDefined: false}));
+                const userDefs = (message.userProfiles || []).map((p: any) => ({...p, isUserDefined: true}));
+                allProfilesCache = [...builtIns, ...userDefs].sort((a,b) => a.name.localeCompare(b.name));
+                console.log("[Liku Webview] Profiles loaded into cache. Total:", allProfilesCache.length);
+                
+                // Restore last search or show all, then update details for current selection
+                renderComboResults(persistedState.lastSearchTerm || "");
+                const currentlySelected = allProfilesCache.find(p => p.id === persistedState.selectedProfileId);
+                if (currentlySelected) {
+                     comboSearchInput.value = persistedState.lastSearchTerm === "" ? currentlySelected.name : persistedState.lastSearchTerm; // if search was empty, show selected name
+                } else if (persistedState.selectedProfileId){ // selection was lost
+                    persistedState.selectedProfileId = null;
+                    persistedState.lastSearchTerm = "";
+                    vscode.setState(persistedState);
+                    comboSearchInput.value = "";
+                }
+                updateProfileDetailsUI(currentlySelected);
                 break;
-            case 'profileSavedOrDeleted':
-                closeEditModal();
-                // The extension side should send 'profilesLoaded' again to refresh data fully.
-                // If it doesn't, you might need to call vscode.postMessage({ command: 'getProfiles' }); here.
+            case 'profileActionCompleted': // Generic message from controller after save/delete
+                console.log("[Liku Webview] Profile action completed:", message.action, "ID:", message.id);
+                if (message.action === 'delete' && persistedState.selectedProfileId === message.id) {
+                    // If the deleted profile was the selected one, clear selection
+                    persistedState.selectedProfileId = null;
+                    persistedState.lastSearchTerm = ""; // Clear search as well
+                    vscode.setState(persistedState);
+                    comboSearchInput.value = ""; // Clear input field
+                    updateProfileDetailsUI(null); // Clear details view
+                }
+                closeEditModal(); // Close modal if it was open
+                // The controller MUST have already sent 'profilesLoaded' before this for the list to be up-to-date
                 break;
             case 'profileSaveFailed':
-                // Modal likely remains open, error message handled by extension or an alert here.
-                // alert(`Profile save failed: ${message.message}`); // Example
+                console.warn("[Liku Webview] Profile save failed message received.");
                 break;
         }
     });

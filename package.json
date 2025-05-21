@@ -14,10 +14,6 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onView:workspace-liku.activityView",
-    "onCommand:workspace-liku.setupWorkspace"
-  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -46,44 +42,29 @@
         }
       ]
     }
-  },
-  "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "build-production": "npm run esbuild-base -- --minify && npm run build-webview -- --minify && npm run copy-webview-assets && npm run copy-media",
-    "esbuild-base": "esbuild ./src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
-    "build": "npm run esbuild-base -- --sourcemap && npm run build-webview -- --sourcemap && npm run copy-webview-assets && npm run copy-media",
-    "esbuild": "npm run esbuild-base -- --sourcemap",
-    "esbuild-watch": "npm run esbuild-base -- --sourcemap --watch",
-    "build-webview": "esbuild ./src/webview/main.ts --bundle --outfile=dist/webview/main.js --format=esm --platform=browser",
-    "watch-webview": "npm run build-webview -- --sourcemap --watch",
-    "copy-webview-assets": "cpx \"src/webview/styles.css\" \"dist/webview\"",
-    "watch-webview-css": "chokidar \"src/webview/styles.css\" -c \"npm run copy-webview-assets\"",
-    "copy-media": "cpx \"media/*.*\" \"dist/media\"",
-    "watch-media": "chokidar \"media/*.*\" -c \"npm run copy-media\"",
-    "compile": "esbuild ./src/extension.ts ./src/webview/main.ts --bundle --outdir=dist --platform=node --external:vscode --format=cjs --sourcemap",
-    "watch": "esbuild ./src/extension.ts ./src/webview/main.ts --bundle --outdir=dist --platform=node --external:vscode --format=cjs --sourcemap --watch",
-    "lint": "eslint src --ext ts",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "compile-tests": "tsc -p ./.vscode-test/tsconfig.json",
-    "watch-tests": "tsc -p ./.vscode-test/tsconfig.json -w",
-    "pretest": "npm run compile-tests && npm run compile && npm run lint",
-    "esbuild-custom": "node esbuild.js"
-  },
+  },"scripts": {
+  "vscode:prepublish": "npm run compile",
+  "compile": "node ./esbuild.js",
+  "watch": "node ./esbuild.js --watch",
+  "lint": "eslint src --ext ts",
+  "test": "echo \"Error: no test specified\" && exit 1"
+},
   "dependencies": {
     "@vscode/webview-ui-toolkit": "^1.4.0"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.6",
-    "@types/node": "18.x",
+    "@types/node": "22.x",
     "@types/vscode": "^1.80.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.2",
-    "@typescript-eslint/parser": "^7.0.2",
-    "@vscode/test-cli": "^0.0.6",
+    "@typescript-eslint/eslint-plugin": "^8.32.1",
+    "@typescript-eslint/parser": "^8.32.1",
+    "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.3.9",
-    "chokidar-cli": "^3.0.0",
-    "cpx": "^1.5.0",
-    "esbuild": "^0.20.0",
-    "eslint": "^8.56.0",
+    "chokidar": "^4.0.3",
+    "chokidar-cli": "^3.5.3",
+    "cpx": "^1.2.1",
+    "esbuild": "^0.25.4",
+    "eslint": "^9.27.0",
     "npm-run-all": "^4.1.5",
     "typescript": "^5.3.3"
   },
